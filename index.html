@@ -725,44 +725,44 @@ if(firebaseReady) {
 }
 
 /* ═══════════════════════════════
-   ONLINE PRESENCE
+   ONLINE PRESENCE FIXED
 ═══════════════════════════════ */
-const sessionId = Math.random().toString(36).slice(2);
-async function updateOnlineCount() {
-  if(!firebaseReady){
-    animateCounter('online-num', 1200+Math.floor(Math.random()*400));
-    return;
-  }
-  try {
-    const pRef = db.collection('presence').doc(sessionId);
-    await pRef.set({t: firebase.firestore.FieldValue.serverTimestamp()});
-    setInterval(()=>pRef.set({t:firebase.firestore.FieldValue.serverTimestamp()}), 90000);
-    window.addEventListener('beforeunload', ()=>pRef.delete().catch(()=>{}));
 
-    const fiveMin = new Date(Date.now()-5*60*1000);
-    db.collection('presence').where('t','>',fiveMin).onSnapshot(s=>{
-      const n = Math.max(s.size, 1);
-      document.getElementById('online-num').textContent = n.toLocaleString();
+function updateOnlineCount() {
+  if (!firebaseReady) return;
+
+  auth.onAuthStateChanged(async (user) => {
+    if (!user) return;
+
+    const pRef = db.collection("presence").doc(user.uid);
+
+    // Set online
+    await pRef.set({
+      uid: user.uid,
+      name: user.displayName || "Player",
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
     });
-  } catch(e) {
-    animateCounter('online-num', 1200+Math.floor(Math.random()*400));
-  }
-}
 
-function animateCounter(id, target) {
-  let cur=0; const el=document.getElementById(id);
-  const step=()=>{ cur=Math.min(cur+Math.ceil(target/40),target); el.textContent=cur.toLocaleString(); if(cur<target)requestAnimationFrame(step); };
-  step();
-}
+    // Update every 30 seconds
+    setInterval(() => {
+      pRef.update({
+        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }, 30000);
 
-/* Live player counts per game (simulated w/ slight Firestore-based variance) */
-const BASE_PLAYERS = {blockblast:3421, cubedodge:5203, stackattack:2819};
-document.querySelectorAll('.live-count').forEach(el=>{
-  const game=el.dataset.game;
-  let n=BASE_PLAYERS[game]||1000;
-  el.textContent=n.toLocaleString();
-  setInterval(()=>{n+=Math.floor((Math.random()-.4)*15); el.textContent=n.toLocaleString();},3000);
-});
+    // Remove when leaving
+    window.addEventListener("beforeunload", () => {
+      pRef.delete().catch(() => {});
+    });
+
+    // Count online users
+    db.collection("presence")
+      .where("lastSeen", ">", new Date(Date.now() - 5 * 60 * 1000))
+      .onSnapshot((snap) => {
+        document.getElementById("online-num").textContent = snap.size;
+      });
+  });
+}
 
 /* ═══════════════════════════════
    GAME ENGINE
