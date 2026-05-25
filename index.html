@@ -114,8 +114,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--body);overflow-x:h
 .gcard-name{font-weight:900;font-size:1rem;color:#fff;margin-bottom:4px}
 .gcard-desc{font-size:.8rem;color:var(--muted);line-height:1.5;font-weight:600;margin-bottom:.75rem}
 .gcard-footer{display:flex;align-items:center;justify-content:space-between}
-.players-live{display:flex;align-items:center;gap:5px;font-size:.75rem;font-weight:700;color:var(--green)}
-.gdot{width:5px;height:5px;background:var(--green);border-radius:50%}
+
 .tags{display:flex;gap:4px}
 .tag{padding:2px 7px;background:rgba(255,255,255,.06);border-radius:4px;font-size:.65rem;font-weight:700;color:var(--muted)}
 .gcard-play{display:block;margin:.75rem 1.1rem 1.1rem;padding:.55rem;background:var(--accent);color:#000;border:none;border-radius:8px;font-family:var(--body);font-weight:800;font-size:.875rem;cursor:pointer;transition:all .2s;opacity:0;transform:translateY(4px);width:calc(100% - 2.2rem)}
@@ -297,7 +296,7 @@ footer{position:relative;z-index:1;background:var(--bg2);border-top:1px solid va
       <button class="btn btn-ghost" style="padding:.85rem 1.75rem;font-size:.95rem" onclick="showView('leaderboard')">🏆 Leaderboard</button>
     </div>
     <div class="stats-row">
-      <div class="stat"><span class="stat-n" id="stat-total">2.1M+</span><div class="stat-l">Total Players</div></div>
+      <div class="stat"><span class="stat-n" id="stat-total">—</span><div class="stat-l">Total Players</div></div>
       <div class="stat"><span class="stat-n">3</span><div class="stat-l">Games</div></div>
       <div class="stat"><span class="stat-n">100%</span><div class="stat-l">Free</div></div>
       <div class="stat"><span class="stat-n">0ms</span><div class="stat-l">Download</div></div>
@@ -319,7 +318,6 @@ footer{position:relative;z-index:1;background:var(--bg2);border-top:1px solid va
           <div class="gcard-name">Block Blast</div>
           <div class="gcard-desc">Classic breakout — smash all the blocks with your paddle and ball. How high can you score?</div>
           <div class="gcard-footer">
-            <div class="players-live"><div class="gdot"></div><span class="live-count" data-game="blockblast">···</span> playing</div>
             <div class="tags"><span class="tag">Arcade</span><span class="tag">1 Player</span></div>
           </div>
         </div>
@@ -336,7 +334,6 @@ footer{position:relative;z-index:1;background:var(--bg2);border-top:1px solid va
           <div class="gcard-name">Cube Dodge</div>
           <div class="gcard-desc">Move your glowing cube to dodge enemies closing in from all sides. Survive as long as possible!</div>
           <div class="gcard-footer">
-            <div class="players-live"><div class="gdot"></div><span class="live-count" data-game="cubedodge">···</span> playing</div>
             <div class="tags"><span class="tag">Survival</span><span class="tag">Action</span></div>
           </div>
         </div>
@@ -353,7 +350,6 @@ footer{position:relative;z-index:1;background:var(--bg2);border-top:1px solid va
           <div class="gcard-name">Stack Attack</div>
           <div class="gcard-desc">Stack moving blocks as high as you can! Time your drops perfectly for bonus points.</div>
           <div class="gcard-footer">
-            <div class="players-live"><div class="gdot"></div><span class="live-count" data-game="stackattack">···</span> playing</div>
             <div class="tags"><span class="tag">Skill</span><span class="tag">Casual</span></div>
           </div>
         </div>
@@ -729,38 +725,46 @@ if(firebaseReady) {
 ═══════════════════════════════ */
 
 function updateOnlineCount() {
-  if (!firebaseReady) return;
+  if (!firebaseReady) {
+    // Firebase not configured — show nothing, not fake numbers
+    document.getElementById("online-num").textContent = "—";
+    const st = document.getElementById("stat-total");
+    if (st) st.textContent = "—";
+    return;
+  }
 
   auth.onAuthStateChanged(async (user) => {
     if (!user) return;
 
     const pRef = db.collection("presence").doc(user.uid);
 
-    // Set online
+    // Register this session as online
     await pRef.set({
       uid: user.uid,
       name: user.displayName || "Player",
       lastSeen: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    // Update every 30 seconds
+    // Heartbeat every 30 s so presence stays fresh
     setInterval(() => {
-      pRef.update({
-        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      pRef.update({ lastSeen: firebase.firestore.FieldValue.serverTimestamp() });
     }, 30000);
 
-    // Remove when leaving
-    window.addEventListener("beforeunload", () => {
-      pRef.delete().catch(() => {});
-    });
+    // Clean up on tab close
+    window.addEventListener("beforeunload", () => pRef.delete().catch(() => {}));
 
-    // Count online users
+    // Live count: sessions updated in the last 5 minutes
     db.collection("presence")
       .where("lastSeen", ">", new Date(Date.now() - 5 * 60 * 1000))
       .onSnapshot((snap) => {
-        document.getElementById("online-num").textContent = snap.size;
+        document.getElementById("online-num").textContent = snap.size.toLocaleString();
       });
+
+    // Real total registered players from users collection
+    db.collection("users").onSnapshot((snap) => {
+      const st = document.getElementById("stat-total");
+      if (st) st.textContent = snap.size.toLocaleString();
+    });
   });
 }
 
